@@ -10,6 +10,7 @@ Author of this script and included expert policies: Jonathan Ho (hoj@openai.com)
 """
 
 import os
+import sys
 import pickle
 import tensorflow as tf
 import numpy as np
@@ -43,7 +44,7 @@ def main():
         observations = []
         actions = []
         for i in range(args.num_rollouts):
-            print('iter', i)
+            sys.stdout.flush()
             obs = env.reset()
             done = False
             totalr = 0.
@@ -57,7 +58,9 @@ def main():
                 steps += 1
                 if args.render:
                     env.render()
-                if steps % 100 == 0: print("%i/%i"%(steps, max_steps))
+                if steps % 100 == 0: 
+                    print("\riter {}/{} {}/{}".format(i, args.num_rollouts, steps, max_steps), end="")
+                    
                 if steps >= max_steps:
                     break
             returns.append(totalr)
@@ -67,7 +70,9 @@ def main():
         print('std of return', np.std(returns))
 
         expert_data = {'observations': np.array(observations),
-                       'actions': np.array(actions)}
+                       'actions': np.array(actions),
+                       'returns': returns
+                       }
 
         with open(os.path.join('expert_data', args.envname + '.pkl'), 'wb') as f:
             pickle.dump(expert_data, f, pickle.HIGHEST_PROTOCOL)
