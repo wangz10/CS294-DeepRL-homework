@@ -7,7 +7,7 @@ for e in Hopper-v2 Ant-v2 HalfCheetah-v2 Humanoid-v2 Reacher-v2 Walker2d-v2; do
 done
 
 # 2. Run BC for all tasks
-mkdir -p results
+mkdir -p results/BC
 for e in Hopper-v2 Ant-v2 HalfCheetah-v2 Humanoid-v2 Reacher-v2 Walker2d-v2; do
 	python run_BC.py $e
 done

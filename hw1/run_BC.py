@@ -9,15 +9,8 @@ import pandas as pd
 import tf_util
 import gym
 import load_policy
-from behavior_cloning import BehavioralCloning
-
-def describe_env(env):
-    print('Observations:', env.observation_space.dtype, env.observation_space.shape)
-    print('Actions:', env.action_space.dtype, env.action_space.shape)
-    print('Action space high:', env.action_space.high)
-    print('Action space low:', env.action_space.low)
-    print('Time step limit:', env.spec.timestep_limit)
-    return
+from imitation_learning import BehavioralCloning
+from utils import *
 
 
 def main():
@@ -57,38 +50,12 @@ def main():
     sample_idx = np.arange(n_samples)
 
     print('Training BC model')
-    for i in range(n_epochs):
-        for ii in range(n_batches):
-            start_idx = ii*batch_size
-            end_idx = (ii+1)*batch_size
-            observations_batch = observations[start_idx:end_idx]
-            actions_batch = actions[start_idx:end_idx, 0]
-            loss = bc.fit(observations_batch, actions_batch)
-
-        print('Epoch %d loss = %.6f' % (i, loss))
-        # shuffle samples
-        np.random.shuffle(sample_idx)
-
+    bc.train(observations, actions[:, 0, :], n_epochs=n_epochs, 
+        batch_size=batch_size, shuffle=True)
 
     print('Evaluating policy from the trained BC')
-    returns_bc = []
-    for i in range(args.num_rollouts):
-        sys.stdout.flush()
-        print('iter {}/{}'.format(i, args.num_rollouts), end=" ")
-        obs = env.reset()
-        done = False
-        totalr = 0.
-        steps = 0
-        while not done:
-            action = bc.predict(obs.reshape(1, -1))
-            obs, r, done, _ = env.step(action)
-            totalr += r
-            steps += 1
-
-            if steps >= max_steps:
-                break
-        returns_bc.append(totalr)
-        
+    returns_bc = bc.evaluate_policy(env, n_episodes=args.num_rollouts, 
+        max_steps=max_steps)
 
     results_df = pd.DataFrame({
         'expert_returns': returns_expert,
@@ -97,7 +64,7 @@ def main():
 
     print(results_df.describe())
     results_df.to_csv(
-        os.path.join('results', '%s-%d-%d.csv' % \
+        os.path.join('results/BC', '%s-%d-%d.csv' % \
             (args.envname, n_hidden_units, n_epochs)))
 
 
