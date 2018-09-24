@@ -225,6 +225,8 @@ class Agent(object):
             # YOUR_CODE_HERE
             z = tf.random_normal(tf.shape(sy_mean), mean=0.0, stddev=1.0, name='z')
             sy_sampled_ac = tf.add(sy_mean, tf.exp(sy_logstd) * z)
+            # sy_sampled_ac = tf.nn.tanh(sy_sampled_ac)
+            # sy_sampled_ac = 2 * tf.sigmoid(sy_sampled_ac) - 1
         return sy_sampled_ac
 
     #========================================================================================#
@@ -362,8 +364,9 @@ class Agent(object):
                 feed_dict={self.sy_ob_no: ob.reshape(1, -1)}) # YOUR CODE HERE
 
             ac = ac[0]
-            if not self.discrete: # clip the action to the env.action_space
-                ac = np.clip(ac, env.action_space.low, env.action_space.high)
+            # if not self.discrete: # clip the action to the env.action_space
+            #     ac = np.clip(ac, env.action_space.low, env.action_space.high)
+            #     ac = ac / 10.
             acs.append(ac)
             ob, rew, done, _ = env.step(ac)
             rewards.append(rew)
@@ -518,14 +521,15 @@ class Agent(object):
             # b_n = None # YOUR CODE HERE
             b_n = self.sess.run(self.baseline_prediction, 
                 feed_dict={self.sy_ob_no: ob_no})
+            b_n = b_n * q_n.std() + q_n.mean()
             adv_n = q_n - b_n
-            # scale b_n
-            if adv_n.std() > 0:
-                adv_n = (adv_n - adv_n.mean())/adv_n.std()
-            else:
-                adv_n = (adv_n - adv_n.mean())
-            # make adv_n to the same scale with q_n
-            adv_n = adv_n * q_n.std() + q_n.mean()
+            # # scale b_n
+            # if adv_n.std() > 0:
+            #     adv_n = (adv_n - adv_n.mean())/adv_n.std()
+            # else:
+            #     adv_n = (adv_n - adv_n.mean())
+            # # make adv_n to the same scale with q_n
+            # adv_n = adv_n * q_n.std() + q_n.mean()
 
         else:
             adv_n = q_n.copy()
