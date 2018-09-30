@@ -159,7 +159,21 @@ class QLearner(object):
     ######
 
     # YOUR CODE HERE
+    self.q_t = q_func(obs_t_float, self.num_actions, scope="q_func", reuse=False)
+    self.q_tp1 = q_func(obs_tp1_float, self.num_actions, scope="target_q_func", reuse=False)
+    # Bellman error: using the max(Q_tp1) from the target network
+    q_tp1_gather_indices = tf.range(self.batch_size) * self.num_actions + tf.argmax(self.q_tp1, axis=1, output_type=tf.int32)
+    # the target
+    y = self.rew_t_ph + gamma * tf.gather(tf.reshape(self.q_tp1, [-1]), q_tp1_gather_indices)  * (1-self.done_mask_ph)
 
+    # the Q(s, a) indexed by the actual actions taken from the q_func network
+    q_t_gather_indices = tf.range(self.batch_size) * self.num_actions + self.act_t_ph
+    q_t_s_a_values = tf.gather(tf.reshape(self.q_t, [-1]), q_t_gather_indices)
+
+    self.total_error = tf.reduce_mean( huber_loss(y - q_t_s_a_values) )
+
+    q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='q_func')
+    target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='target_q_func')
     ######
 
     # construct optimization op (with gradient clipping)
@@ -187,7 +201,8 @@ class QLearner(object):
     self.mean_episode_reward      = -float('nan')
     self.best_mean_episode_reward = -float('inf')
     self.last_obs = self.env.reset()
-    self.log_every_n_steps = 10000
+    # self.log_every_n_steps = 10000
+    self.log_every_n_steps = 1000
 
     self.start_time = None
     self.t = 0
@@ -229,6 +244,39 @@ class QLearner(object):
     #####
 
     # YOUR CODE HERE
+    def epsilon_greedy(q_values, eps):
+      '''
+      q_values: 1d np.array of q_values
+      eps: epsilon
+      '''
+      num_actions = q_values.shape[0]
+      probs = np.ones_like(q_values) * (eps / num_actions)
+      best_action = np.argmax(q_values)
+      probs[best_action] += 1 - eps 
+      return np.random.choice(num_actions, 1, p=probs)[0]
+
+
+    idx = self.replay_buffer.store_frame(self.last_obs)
+    obs_enc = self.replay_buffer.encode_recent_observation()
+    obs_enc = np.expand_dims(obs_enc, 0)
+    if self.model_initialized:
+      q_t_values = self.session.run(self.q_t, feed_dict={
+        self.obs_t_ph: obs_enc
+        })
+      q_t_values = q_t_values.ravel()
+
+    else:
+      q_t_values = np.zeros(self.num_actions)
+
+    eps = self.exploration.value(self.t)
+    action = epsilon_greedy(q_t_values, eps)
+    obs, reward, done, info = self.env.step(action)
+    # Store the transition into replay_buffer
+    self.replay_buffer.store_effect(idx, action, reward, done)
+    
+    if done:
+      obs = self.env.reset()
+    self.last_obs = obs
 
   def update_model(self):
     ### 3. Perform experience replay and train the network.
@@ -272,10 +320,36 @@ class QLearner(object):
       # you should update every target_update_freq steps, and you may find the
       # variable self.num_param_updates useful for this (it was initialized to 0)
       #####
-
       # YOUR CODE HERE
+      # sample a batch of transitions from replay buffer
+      obs_batch, act_batch, rew_batch, next_obs_batch, done_mask = \
+        self.replay_buffer.sample(self.batch_size)
+      # print(obs_batch.shape, act_batch.shape, rew_batch.shape, next_obs_batch.shape)
+
+      # init model if not already initialized
+      if not self.model_initialized:
+        print('Initializing model variables')
+        initialize_interdependent_variables(self.session, tf.global_variables(), {
+            self.obs_t_ph: obs_batch,
+            self.obs_tp1_ph: next_obs_batch,
+        })
+        self.model_initialized = True
+      # train the model
+      _, total_error = self.session.run([self.train_fn, self.total_error], 
+        feed_dict={
+          self.obs_t_ph: obs_batch,
+          self.act_t_ph: act_batch,
+          self.rew_t_ph: rew_batch,
+          self.obs_tp1_ph: next_obs_batch,
+          self.done_mask_ph: done_mask,
+          self.learning_rate: self.optimizer_spec.lr_schedule.value(self.t),
+        })
 
       self.num_param_updates += 1
+
+      # update target network
+      if self.num_param_updates % self.target_update_freq == 0:
+        self.session.run(self.update_target_fn)
 
     self.t += 1
 
@@ -308,6 +382,7 @@ class QLearner(object):
 def learn(*args, **kwargs):
   alg = QLearner(*args, **kwargs)
   while not alg.stopping_criterion_met():
+    # print(alg.t)
     alg.step_env()
     # at this point, the environment should have been advanced one step (and
     # reset if done was true), and self.last_obs should point to the new latest
