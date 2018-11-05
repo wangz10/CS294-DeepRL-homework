@@ -41,8 +41,10 @@ class ModelBasedPolicy(object):
         """
         ### PROBLEM 1
         ### YOUR CODE HERE
-        raise NotImplementedError
-
+        # raise NotImplementedError
+        state_ph = tf.placeholder(shape=(None, self._state_dim), dtype=tf.float32, name='state')
+        action_ph = tf.placeholder(shape=(None, self._action_dim), dtype=tf.float32, name='action')
+        next_state_ph = tf.placeholder(shape=(None, self._state_dim), dtype=tf.float32, name='next_state')
         return state_ph, action_ph, next_state_ph
 
     def _dynamics_func(self, state, action, reuse):
@@ -65,8 +67,20 @@ class ModelBasedPolicy(object):
         """
         ### PROBLEM 1
         ### YOUR CODE HERE
-        raise NotImplementedError
-
+        # raise NotImplementedError
+        # (a) Normalize both the state and action
+        state_ph = utils.normalize(state, self._init_dataset.state_mean, self._init_dataset.state_std)
+        action_ph = utils.normalize(action, self._init_dataset.action_mean, self._init_dataset.action_std)
+        # (b) Concatenate the normalized state and action
+        state_action_ph = tf.concat([state_ph, action_ph], 1)
+        # (c)
+        delta_state_pred_ph = utils.build_mlp(state_action_ph, self._state_dim, "dynamics_func", 
+            n_layers=self._nn_layers,
+            reuse=reuse
+            )
+        # (d)
+        delta_state_pred_ph = utils.unnormalize(delta_state_pred_ph, self._init_dataset.delta_state_mean, self._init_dataset.delta_state_std)
+        next_state_pred = state + delta_state_pred_ph
         return next_state_pred
 
     def _setup_training(self, state_ph, next_state_ph, next_state_pred):
@@ -89,8 +103,17 @@ class ModelBasedPolicy(object):
         """
         ### PROBLEM 1
         ### YOUR CODE HERE
-        raise NotImplementedError
-
+        # raise NotImplementedError
+        # (a)
+        state_diff = next_state_ph - state_ph
+        state_diff_pred = next_state_pred - state_ph
+        # (b)
+        state_diff = utils.normalize(state_diff, self._init_dataset.delta_state_mean, self._init_dataset.delta_state_std)
+        state_diff_pred = utils.normalize(state_diff_pred, self._init_dataset.delta_state_mean, self._init_dataset.delta_state_std)
+        # (c)
+        loss = tf.reduce_mean(tf.squared_difference(state_diff, state_diff_pred))
+        # (d)
+        optimizer = tf.train.AdamOptimizer(learning_rate=self._learning_rate).minimize(loss)
         return loss, optimizer
 
     def _setup_action_selection(self, state_ph):
@@ -136,7 +159,11 @@ class ModelBasedPolicy(object):
 
         ### PROBLEM 1
         ### YOUR CODE HERE
-        raise NotImplementedError
+        # raise NotImplementedError
+        state_ph, action_ph, next_state_ph = self._setup_placeholders()
+        next_state_pred = self._dynamics_func(state_ph, action_ph, reuse=False)
+        loss, optimizer = self._setup_training(state_ph, next_state_ph, next_state_pred)
+
         ### PROBLEM 2
         ### YOUR CODE HERE
         best_action = None
@@ -155,8 +182,12 @@ class ModelBasedPolicy(object):
         """
         ### PROBLEM 1
         ### YOUR CODE HERE
-        raise NotImplementedError
-
+        # raise NotImplementedError
+        _, loss = self._sess.run([self._optimizer, self._loss], feed_dict={
+            self._state_ph: states,
+            self._action_ph: actions,
+            self._next_state_ph: next_states
+            })
         return loss
 
     def predict(self, state, action):
@@ -174,8 +205,12 @@ class ModelBasedPolicy(object):
 
         ### PROBLEM 1
         ### YOUR CODE HERE
-        raise NotImplementedError
-
+        # raise NotImplementedError
+        next_state_pred = self._sess.run(self._next_state_pred, feed_dict={
+            self._state_ph: state.reshape(-1, self._state_dim),
+            self._action_ph: action.reshape(-1, self._action_dim)
+            })
+        next_state_pred = next_state_pred.reshape(self._state_dim,)
         assert np.shape(next_state_pred) == (self._state_dim,)
         return next_state_pred
 
